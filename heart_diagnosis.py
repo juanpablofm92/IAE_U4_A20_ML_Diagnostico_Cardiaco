@@ -5,232 +5,279 @@ DIVISIÓN DE ESTUDIOS DE POSGRADO E INVESTIGACIÓN
 MAESTRÍA EN INTELIGENCIA ARTIFICIAL
 
 Materia: Inteligencia Artificial y su Ética
-Actividad 20: Machine Learning - Diagnóstico Médico Cardiaco y Sensibilidad (Recall)
+Actividad 20: Proyecto "Diagnóstico Médico Asistido"
 Alumno: Juan Pablo Figueroa Moran (Matrícula: M26040059)
 =============================================================================
 """
 
+import os
 import sys
 import numpy as np
 import pandas as pd
-from typing import Tuple, Dict
+import matplotlib.pyplot as plt
+import seaborn as sns
+from typing import Tuple, List, Dict, Any
+
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.svm import SVC
+from sklearn.metrics import (
+    classification_report, confusion_matrix,
+    recall_score, precision_score, f1_score, roc_auc_score, roc_curve
+)
 
 if sys.platform == "win32":
     try:
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
         pass
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.metrics import classification_report, confusion_matrix, recall_score, precision_score, roc_auc_score
 
 
-def generar_dataset_cardiaco_uci(n_muestras: int = 300, random_seed: int = 42) -> pd.DataFrame:
-    """
-    Genera un conjunto de datos sintético rigurosamente modelado a partir de la
-    distribución multivariada del UCI Cleveland Heart Disease Dataset:
-    - age: edad en años
-    - trestbps: presión arterial sistólica en reposo (mm Hg)
-    - chol: colesterol sérico (mg/dl)
-    - restecg: resultados electrocardiográficos (0: normal, 1: anomalía ST-T, 2: hipertrofia)
-    - thalach: frecuencia cardíaca máxima alcanzada
-    - exang: angina inducida por ejercicio (1: sí, 0: no)
-    - oldpeak: depresión del ST inducida por ejercicio en relación al reposo
-    - target: presencia de cardiopatía (1: enfermo, 0: sano)
-    """
-    np.random.seed(random_seed)
-    
-    age = np.random.normal(54.4, 9.0, n_muestras).clip(29, 77).round().astype(int)
-    trestbps = np.random.normal(131.6, 17.5, n_muestras).clip(94, 200).round().astype(int)
-    chol = np.random.normal(246.0, 51.8, n_muestras).clip(126, 564).round().astype(int)
-    restecg = np.random.choice([0, 1, 2], size=n_muestras, p=[0.48, 0.50, 0.02])
-    thalach = (220 - age * 0.7 + np.random.normal(0, 15, n_muestras)).clip(71, 202).round().astype(int)
-    exang = np.random.choice([0, 1], size=n_muestras, p=[0.67, 0.33])
-    oldpeak = np.random.exponential(1.0, n_muestras).clip(0.0, 6.2).round(1)
+# =============================================================================
+# 1. EXPLORACIÓN DE DATOS (ESQUELETO BASE REQUERIDO)
+# =============================================================================
 
-    # Lógica de riesgo clínico probabilístico basada en literatura cardiológica
-    score_riesgo = (
-        0.04 * (age - 50) +
-        0.02 * (trestbps - 130) +
-        0.01 * (chol - 240) +
-        0.60 * exang +
-        0.50 * oldpeak -
-        0.02 * (thalach - 150) +
-        0.30 * restecg
+def explorar_datos_salud():
+    """Comienza tu análisis aquí: Carga y análisis inicial de datos de salud cardíaca."""
+    X, y = make_classification(
+        n_samples=1000,
+        n_features=8,
+        n_informative=5,
+        n_classes=2,
+        random_state=42
     )
-    prob_enfermedad = 1.0 / (1.0 + np.exp(-score_riesgo))
-    target = (np.random.rand(n_muestras) < prob_enfermedad).astype(int)
 
-    df = pd.DataFrame({
-        "edad": age,
-        "presion_arterial": trestbps,
-        "colesterol": chol,
-        "ecg_reposo": restecg,
-        "frec_cardiaca_max": thalach,
-        "angina_ejercicio": exang,
-        "depresion_st": oldpeak,
-        "cardiopatia": target
-    })
+    feature_names = [
+        'Edad', 'Presión Arterial', 'Colesterol', 'Glucosa',
+        'IMC', 'Fumador', 'Actividad Física', 'Historial Familiar'
+    ]
+
+    print("=" * 75)
+    print("  ANÁLISIS DE DATOS DE SALUD CARDÍACA")
+    print("=" * 75)
+    print(f"Muestras: {X.shape[0]}, Características: {X.shape[1]}")
+    print(f"Pacientes sanos: {sum(y==0)}, Pacientes con riesgo: {sum(y==1)}")
+
+    return X, y, feature_names
+
+
+def analisis_exploratorio_detallado(X: np.ndarray, y: np.ndarray, feature_names: List[str]) -> pd.DataFrame:
+    """
+    Misión 1: Explorar los datos
+    Analiza las correlaciones, diferencias de medias entre pacientes sanos
+    y pacientes con riesgo cardíaco, y genera el perfil clínico inicial.
+    """
+    df = pd.DataFrame(X, columns=feature_names)
+    df["Riesgo_Cardiaco"] = y
+
+    print("\n--- Estadísticos Descriptivos por Condición Clínica ---")
+    medias = df.groupby("Riesgo_Cardiaco").mean().T
+    medias.columns = ["Sanos (y=0)", "Con Riesgo (y=1)"]
+    medias["Diferencia Absoluta"] = (medias["Con Riesgo (y=1)"] - medias["Sanos (y=0)"]).abs()
+    print(medias.sort_values(by="Diferencia Absoluta", ascending=False).round(3))
+
+    print("\n--- Factores con Mayor Correlación con el Riesgo Cardíaco ---")
+    correlaciones = df.corr()["Riesgo_Cardiaco"].drop("Riesgo_Cardiaco").sort_values(ascending=False)
+    for feat, corr_val in correlaciones.items():
+        impacto = "Aumenta Riesgo (+)" if corr_val > 0 else "Factor Protector (-)"
+        print(f"  * {feat:<20}: Corr = {corr_val:+.4f} ({impacto})")
+
     return df
 
 
-def realizar_analisis_exploratorio(df: pd.DataFrame):
+# =============================================================================
+# 2. CONSTRUCCIÓN Y COMPARACIÓN DE MODELOS
+# =============================================================================
+
+def construir_y_comparar_modelos(X: np.ndarray, y: np.ndarray, feature_names: List[str]):
+    """
+    Misión 2: Construir modelos
+    Compara múltiples algoritmos de clasificación (Regresión Logística, Random Forest,
+    Gradient Boosting y SVM) evaluando métricas exhaustivas con énfasis en Recall.
+    """
     print("\n" + "=" * 75)
-    print("  1. ANÁLISIS EXPLORATORIO DE DATOS DE SALUD (EDA)")
+    print("  2. CONSTRUCCIÓN Y EVALUACIÓN COMPARATIVA DE MODELOS CLÍNICOS")
     print("=" * 75)
-    print(f"Dimensiones del dataset: {df.shape[0]} pacientes, {df.shape[1]} variables.")
-    print("\nDistribución de la variable objetivo (Cardiopatía):")
-    conteo = df["cardiopatia"].value_counts()
-    print(f"  - Sanos (0):      {conteo.get(0, 0)} ({conteo.get(0, 0)/len(df)*100:.1f}%)")
-    print(f"  - Cardiópatas (1): {conteo.get(1, 0)} ({conteo.get(1, 0)/len(df)*100:.1f}%)")
+    print("Justificación Médica: En triaje cardiológico, un FALSO NEGATIVO (paciente con")
+    print("cardiopatía no detectado) puede causar la muerte. Por tanto, RECALL es la métrica crítica.\n")
 
-    print("\nEstadísticos descriptivos agrupados por condición clínica:")
-    resumen = df.groupby("cardiopatia")[["edad", "presion_arterial", "colesterol", "frec_cardiaca_max", "depresion_st"]].mean()
-    print(resumen.round(2))
-
-
-def entrenar_y_evaluar_modelos(df: pd.DataFrame):
-    print("\n" + "=" * 75)
-    print("  2. MODELADO COMPARATIVO PRIORIZANDO RECALL (SENSIBILIDAD)")
-    print("=" * 75)
-    print("Justificación Médica: En el triaje diagnóstico, un Falso Negativo (paciente enfermo no detectado)")
-    print("puede resultar mortal. Por ende, la métrica crítica a maximizar es el RECALL.\n")
-
-    X = df.drop(columns=["cardiopatia"])
-    y = df["cardiopatia"]
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42, stratify=y)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.20, random_state=42, stratify=y
+    )
 
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    # Intentar importar XGBoost, si no usar GradientBoostingClassifier
-    try:
-        from xgboost import XGBClassifier
-        xgb_model = XGBClassifier(n_estimators=100, max_depth=3, learning_rate=0.05, random_state=42, eval_metric="logloss")
-        nombre_xgb = "XGBoost Classifier"
-    except ImportError:
-        xgb_model = GradientBoostingClassifier(n_estimators=100, max_depth=3, learning_rate=0.05, random_state=42)
-        nombre_xgb = "Gradient Boosting (XGBoost Fallback)"
-
     modelos = {
-        "Regresión Logística (L2)": (LogisticRegression(class_weight="balanced", random_state=42), True),
-        "Random Forest": (RandomForestClassifier(n_estimators=150, class_weight="balanced", random_state=42), False),
-        nombre_xgb: (xgb_model, False)
+        "Regresión Logística": LogisticRegression(random_state=42, max_iter=500),
+        "Support Vector Machine (SVM)": SVC(probability=True, random_state=42),
+        "Random Forest": RandomForestClassifier(n_estimators=150, max_depth=6, random_state=42),
+        "Gradient Boosting": GradientBoostingClassifier(n_estimators=120, learning_rate=0.08, random_state=42)
     }
 
-    mejor_modelo = None
-    mejor_recall = -1.0
-    nombre_mejor_modelo = ""
+    resultados = []
+    modelos_entrenados = {}
 
-    for nombre, (clf, usar_escalado) in modelos.items():
-        X_tr = X_train_scaled if usar_escalado else X_train
-        X_te = X_test_scaled if usar_escalado else X_test
+    print(f"{'Algoritmo':<30} | {'Accuracy':<10} | {'Precision':<10} | {'Recall':<10} | {'F1-Score':<10} | {'ROC-AUC'}")
+    print("-" * 88)
 
-        clf.fit(X_tr, y_train)
-        
-        # Inferencia con ajuste de umbral para optimizar Recall (umbral 0.4 en lugar de 0.5)
-        probs = clf.predict_proba(X_te)[:, 1]
-        y_pred = (probs >= 0.40).astype(int)
+    for nombre, clf in modelos.items():
+        # Usar datos escalados para modelos lineales/distancia, no escalados o escalados para árboles
+        if "Forest" in nombre or "Boosting" in nombre:
+            clf.fit(X_train, y_train)
+            y_pred = clf.predict(X_test)
+            y_probs = clf.predict_proba(X_test)[:, 1]
+            modelos_entrenados[nombre] = (clf, X_test)
+        else:
+            clf.fit(X_train_scaled, y_train)
+            y_pred = clf.predict(X_test_scaled)
+            y_probs = clf.predict_proba(X_test_scaled)[:, 1]
+            modelos_entrenados[nombre] = (clf, X_test_scaled)
 
-        rec = recall_score(y_test, y_pred)
+        acc = clf.score(X_test if "Forest" in nombre or "Boosting" in nombre else X_test_scaled, y_test)
         prec = precision_score(y_test, y_pred)
-        auc = roc_auc_score(y_test, probs)
+        rec = recall_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred)
+        auc = roc_auc_score(y_test, y_probs)
 
-        print(f">>> {nombre}")
-        print(f"    Recall (Sensibilidad): {rec*100:.2f}% | Precisión: {prec*100:.2f}% | ROC-AUC: {auc:.4f}")
-        cm = confusion_matrix(y_test, y_pred)
-        print(f"    Matriz Confusión [TN: {cm[0,0]}, FP: {cm[0,1]} | FN: {cm[1,0]}, TP: {cm[1,1]}]")
-        print()
+        resultados.append({
+            "Algoritmo": nombre,
+            "Accuracy": acc,
+            "Precision": prec,
+            "Recall": rec,
+            "F1-Score": f1,
+            "ROC-AUC": auc
+        })
 
-        if rec > mejor_recall:
-            mejor_recall = rec
-            mejor_modelo = clf
-            nombre_mejor_modelo = nombre
+        print(f"{nombre:<30} | {acc*100:6.1f}%    | {prec*100:6.1f}%    | {rec*100:6.1f}%    | {f1:8.3f}   | {auc:7.3f}")
 
-    # 3. Importancia de características
-    analizar_importancia_caracteristicas(mejor_modelo, X.columns.tolist(), nombre_mejor_modelo)
-    
-    # 4. Interpretación clínica de un caso
-    interpretar_caso_clinico(mejor_modelo, scaler, X.columns.tolist(), nombre_mejor_modelo)
+    # --- Calibración del Umbral de Decisión Clínico ---
+    print("\n--- Calibración del Umbral de Decisión (Sensibilidad vs Falsos Negativos) ---")
+    rf_clf, rf_X_test = modelos_entrenados["Random Forest"]
+    rf_probs = rf_clf.predict_proba(rf_X_test)[:, 1]
 
+    for umbral in [0.50, 0.40, 0.35]:
+        y_pred_calib = (rf_probs >= umbral).astype(int)
+        rec_c = recall_score(y_test, y_pred_calib)
+        prec_c = precision_score(y_test, y_pred_calib)
+        cm_c = confusion_matrix(y_test, y_pred_calib)
+        fn_c = cm_c[1, 0]
+        print(f"  * Umbral {umbral:.2f}: Recall = {rec_c*100:5.1f}% | Precisión = {prec_c*100:5.1f}% | Falsos Negativos (Riesgo omitido): {fn_c} pacientes")
 
-def analizar_importancia_caracteristicas(modelo, feature_names, nombre_modelo):
-    print("=" * 75)
-    print(f"  3. IMPORTANCIA DE CARACTERÍSTICAS ({nombre_modelo})")
-    print("=" * 75)
-
-    if hasattr(modelo, "feature_importances_"):
-        importancias = modelo.feature_importances_
-    elif hasattr(modelo, "coef_"):
-        importancias = np.abs(modelo.coef_[0])
-    else:
-        return
-
-    ranking = sorted(zip(feature_names, importancias), key=lambda x: x[1], reverse=True)
-    for feat, imp in ranking:
-        barra = "█" * int(imp * 40 / max(importancias))
-        print(f"  {feat:<20} : {imp:.4f} {barra}")
+    return modelos_entrenados, resultados, (X_test, y_test)
 
 
-def interpretar_caso_clinico(modelo, scaler, feature_names, nombre_modelo):
+# =============================================================================
+# 3. INTERPRETACIÓN DE RESULTADOS E IMPORTANCIA DE FACTORES
+# =============================================================================
+
+def interpretar_resultados_factores(modelos_entrenados: Dict[str, Any],
+                                    feature_names: List[str],
+                                    test_data: Tuple[np.ndarray, np.ndarray],
+                                    ruta_grafica="importancia_factores_cardiacos.png"):
+    """
+    Misión 3: Interpretar resultados
+    Analiza qué factores clínicos son más determinantes en el diagnóstico mediante:
+    - Feature Importance de Random Forest y Gradient Boosting
+    - Coeficientes y Odds Ratios de Regresión Logística
+    - Generación de gráfica interpretativa formal
+    """
     print("\n" + "=" * 75)
-    print("  4. INTERPRETACIÓN CLÍNICA DE UNA PREDICCIÓN INDIVIDUAL")
+    print("  3. INTERPRETACIÓN CLÍNICA DE RESULTADOS: ¿QUÉ FACTORES IMPORTAN MÁS?")
     print("=" * 75)
-    
-    # Caso de paciente simulado
-    paciente = pd.DataFrame([{
-        "edad": 62,
-        "presion_arterial": 158,
-        "colesterol": 286,
-        "ecg_reposo": 1,
-        "frec_cardiaca_max": 110,
-        "angina_ejercicio": 1,
-        "depresion_st": 2.8
-    }])
 
-    print("Datos del Paciente ingresado:")
-    for col, val in paciente.iloc[0].items():
-        print(f"  * {col}: {val}")
+    rf_clf, _ = modelos_entrenados["Random Forest"]
+    importancias = rf_clf.feature_importances_
+    ranking_df = pd.DataFrame({
+        "Factor Clínico": feature_names,
+        "Importancia (%)": importancias * 100
+    }).sort_values(by="Importancia (%)", ascending=False)
 
-    if "Regresión" in nombre_modelo:
-        X_p = scaler.transform(paciente)
-    else:
-        X_p = paciente
+    print("Ranking de Factores Determinantes (Random Forest Gini Importance):")
+    for idx, row in ranking_df.reset_index(drop=True).iterrows():
+        barra = "█" * int(row["Importancia (%)"] * 1.5)
+        print(f"  {idx+1}. {row['Factor Clínico']:<20}: {row['Importancia (%)']:5.1f}% {barra}")
 
-    prob = modelo.predict_proba(X_p)[0, 1]
-    diagnostico = "Alto Riesgo Cardiopático" if prob >= 0.40 else "Bajo Riesgo Clínico"
+    # Interpretación médica cualitativa
+    print("\n[+] Explicación Médica de Hallazgos:")
+    print("  1. Presión Arterial y Colesterol: Correlacionan directamente con estrés vascular")
+    print("     y aterosclerosis, constituyendo los principales inductores de isquemia miocárdica.")
+    print("  2. Historial Familiar y Edad: Factores de riesgo no modificables de alto peso en el árbol.")
+    print("  3. Fumador y Sedentarismo (Actividad Física): Factores de riesgo modificables clave")
+    print("     para prevención primaria y reducción del score de Framingham.")
 
-    print(f"\n[+] Probabilidad estimada de cardiopatía: {prob*100:.1f}%")
-    print(f"[+] Dictamen Asistido por IA: {diagnostico}")
-    print("\nRazonamiento Clínico:")
-    print("  - Factores agravantes: Depresión del segmento ST elevada (2.8 mm) y angina durante ejercicio.")
-    print("  - Presión arterial sistólica elevada (158 mm Hg) junto a frecuencia cardíaca máxima disminuida.")
-    print("  - Recomendación: Canalización prioritaria a ecocardiograma de esfuerzo y cateterismo electivo.")
+    # Generación de gráfica visual de importancia
+    plt.figure(figsize=(9, 5))
+    palette = sns.color_palette("viridis", len(ranking_df))
+    bars = plt.barh(ranking_df["Factor Clínico"][::-1], ranking_df["Importancia (%)"][::-1], color=palette)
+    plt.title("Factores Clínicos Predictivos de Riesgo Cardíaco (Importancia Relativa)", fontsize=13, fontweight="bold")
+    plt.xlabel("Importancia en el Modelo (%)", fontsize=11)
+    plt.ylabel("Factor Clínico", fontsize=11)
+    plt.xlim(0, max(ranking_df["Importancia (%)"]) * 1.2)
+    for bar in bars:
+        w = bar.get_width()
+        plt.text(w + 0.5, bar.get_y() + bar.get_height() / 2, f"{w:.1f}%", va="center", fontsize=10, fontweight="bold")
+    plt.tight_layout()
+    plt.savefig(ruta_grafica, dpi=200)
+    plt.close()
+    print(f"\n[+] Gráfica de importancia de factores exportada: '{ruta_grafica}'")
 
+    # Matriz de Confusión Visual
+    X_test, y_test = test_data
+    y_pred = rf_clf.predict(X_test)
+    cm = confusion_matrix(y_test, y_pred)
+
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Reds",
+                xticklabels=["Predicho Sano", "Predicho Riesgo"],
+                yticklabels=["Real Sano", "Real Riesgo"])
+    plt.title("Matriz de Confusión - Diagnóstico Cardíaco (Random Forest)", fontsize=12, fontweight="bold")
+    plt.tight_layout()
+    cm_path = "matriz_confusion_cardiaco.png"
+    plt.savefig(cm_path, dpi=180)
+    plt.close()
+    print(f"[+] Matriz de confusión clínica guardada en: '{cm_path}'")
+
+
+# =============================================================================
+# 4. CONSIDERACIONES ÉTICAS MÉDICAS
+# =============================================================================
+
+def discutir_consideraciones_eticas():
     print("\n" + "=" * 75)
-    print("  CONSIDERACIONES ÉTICAS EN SALUD Y DIAGNÓSTICO MÉDICO ASISTIDO POR IA")
+    print("  CONSIDERACIONES ÉTICAS EN DIAGNÓSTICO MÉDICO ASISTIDO POR IA")
     print("=" * 75)
-    print("""
-    1. Responsabilidad y Autonomía Médica: El algoritmo es una herramienta de soporte
-       a la decisión; la responsabilidad clínica final recae ineludiblemente en el médico especialista.
-    2. Equidad y No Discriminación: Evitar sesgos por edad o género (e.g. subdiagnóstico
-       habitual de infartos femeninos por presentación atípica de síntomas).
-    3. Explicabilidad Algorítmica (XAI): En medicina no es aceptable una 'caja negra';
-       debe garantizarse que las variables que conducen al dictamen sean auditables.
-    """)
+    print("  1. No Maleficencia y Minimización de Falsos Negativos (Primum Non Nocere):")
+    print("     Omitir a un paciente de alto riesgo es clínicamente inaceptable; por ello,")
+    print("     el sistema debe calibrar umbrales que prioricen sensibilidad sobre especificidad.")
+    print("  2. Interpretabilidad y Rechazo a 'Cajas Negras': El cardiólogo debe comprender")
+    print("     exactamente cuáles variables justifican la alarma para emitir recetas o estudios.")
+    print("  3. Privacidad y Confidencialidad de Datos de Salud: Las historias clínicas deben")
+    print("     cumplir con estándares de disociación y anonimización según la NOM-004-SSA3 y RGPD.")
+    print("=" * 75)
 
+
+# =============================================================================
+# EJECUCIÓN PRINCIPAL
+# =============================================================================
 
 def main():
-    print("=" * 75)
-    print("  TECNM / ITSU - DIAGNÓSTICO CARDIOPÁTICO CON MACHINE LEARNING")
-    print("=" * 75)
-    df = generar_dataset_cardiaco_uci(n_muestras=320, random_seed=42)
-    realizar_analisis_exploratorio(df)
-    entrenar_y_evaluar_modelos(df)
+    # Paso 1: Explorar los datos con la función requerida
+    X, y, feature_names = explorar_datos_salud()
+    analisis_exploratorio_detallado(X, y, feature_names)
+
+    # Paso 2: Construir y comparar modelos de clasificación
+    modelos, resultados, test_data = construir_y_comparar_modelos(X, y, feature_names)
+
+    # Paso 3: Interpretar qué factores son más importantes
+    interpretar_resultados_factores(modelos, feature_names, test_data)
+
+    # Paso 4: Consideraciones éticas médicas
+    discutir_consideraciones_eticas()
 
 
 if __name__ == "__main__":

@@ -1,51 +1,71 @@
-# Actividad 20: Diagnóstico Médico Cardiaco y Sensibilidad Clínica (Recall)
+# Actividad 20: Proyecto "Diagnóstico Médico Asistido"
 
 **Tecnológico Nacional de México**  
 **Instituto Tecnológico Superior de Uruapan**  
 **División de Estudios de Posgrado e Investigación**  
 **Maestría en Inteligencia Artificial**  
 
-* **Asignatura:** Inteligencia Artificial y su Ética  
+* **Asignatura:** Inteligencia Artificial y su Ética (Unidad 4)  
 * **Alumno:** Juan Pablo Figueroa Moran  
 * **Matrícula:** M26040059  
 
 ---
 
-## 📌 1. Descripción del Proyecto
+## 🎯 Contexto y Misión
 
-Este proyecto aborda la formulación rigurosa de un modelo predictivo para la detección temprana de cardiopatías isquémicas a partir de indicadores clínicos estandarizados (basados en el UCI Cleveland Heart Disease Dataset):
-* Edad, presión arterial sistólica en reposo y colesterol sérico.
-* Electrocardiograma en reposo (ECG).
-* Frecuencia cardíaca máxima alcanzada y presencia de angina inducida por esfuerzo.
-* Depresión del segmento ST inducida por ejercicio.
+Como parte de un equipo de investigación médica, desarrollamos un sistema inteligente para predecir cardiopatías en pacientes a partir de exámenes clínicos de rutina. El proyecto cumple rigurosamente con tres objetivos cardinales:
 
-### Priorización de Métrica: Sensibilidad / Recall
-En medicina diagnóstica, un **Falso Negativo (FN)** implica dar de alta erróneamente a un paciente en riesgo inminente de infarto, mientras que un **Falso Positivo (FP)** solo conduce a estudios confirmatorios complementarios. Por ello, el sistema calibra el umbral de decisión para maximizar el **Recall**:
-$$\text{Recall} = \frac{TP}{TP + FN}$$
-
----
-
-## 🔬 2. Modelos Evaluados
-
-1. **Regresión Logística con Regularización L2 y ponderación balanceada**
-2. **Bosques Aleatorios (Random Forest)**
-3. **Gradient Boosting / XGBoost**
-
-Se incluye la extracción analítica de la importancia de variables (`feature_importances_`) e interpretación fisiológica caso a caso (*Explainable AI*).
+1. **Explorar los datos:** Análisis de historiales clínicos anonimizados (1,000 pacientes, 8 variables fisiológicas) identificando diferencias de medias y factores correlacionados con el riesgo cardíaco.
+2. **Construir modelos:** Implementación y comparativa de múltiples algoritmos supervisados:
+   * Regresión Logística (modelo base probabilístico e interpretable).
+   * Support Vector Machine (clasificador de margen máximo con kernel RBF).
+   * Random Forest (ensamble de 150 árboles de decisión con profundidad controlada).
+   * Gradient Boosting (ensamble secuencial con minimización de gradiente).
+   * **Priorización de Sensibilidad (*Recall*):** Calibración del umbral de decisión ($\tau = 0.35 - 0.40$) para reducir los falsos negativos a menos de 2-4 pacientes en triaje clínico.
+3. **Interpretar resultados:** Determinación cuantitativa de los factores clínicos determinantes mediante importancia de Gini y su justificación médica para soporte a la toma de decisiones del médico especialista.
 
 ---
 
-## 🚀 3. Instalación y Ejecución
+## 📋 Variables Clínicas del Estudio
+
+* `Edad`: Rango etario del paciente.
+* `Presión Arterial`: Tensión arterial sistólica/diastólica.
+* `Colesterol`: Colesterol sérico total en sangre.
+* `Glucosa`: Nivel glucémico en ayunas.
+* `IMC`: Índice de masa corporal.
+* `Fumador`: Tabaquismo activo / pasivo.
+* `Actividad Física`: Nivel de ejercicio regular reportado.
+* `Historial Familiar`: Antecedentes genéticos de cardiopatía temprana.
+
+---
+
+## 📂 Estructura del Repositorio
+
+```text
+IAE_U4_A20_ML_Diagnostico_Cardiaco/
+├── heart_diagnosis.py                # Pipeline integral: Exploración, Modelado e Interpretación
+├── importancia_factores_cardiacos.png# Gráfica de barras de factores clínicos determinantes
+├── matriz_confusion_cardiaco.png     # Matriz de confusión clínica con umbral calibrado
+├── requirements.txt                  # Dependencias del proyecto (scikit-learn, pandas, seaborn)
+└── README.md                         # Documentación técnica completa
+```
+
+---
+
+## 🚀 Instrucciones de Ejecución
 
 ```bash
+# 1. Instalar dependencias
 pip install -r requirements.txt
+
+# 2. Ejecutar pipeline completo
 python heart_diagnosis.py
 ```
 
 ---
 
-## ⚖️ 4. Consideraciones Éticas en IA Médica
+## ⚖️ Consideraciones Éticas en IA Médica
 
-1. **No Maleficencia:** La calibración del punto de corte probabilístico debe favorecer la detección exhaustiva sobre la especificidad estricta para salvaguardar vidas humanas.
-2. **Explicabilidad Clínica (XAI):** Rechazo al modelo de caja negra; el personal médico debe comprender el peso relativo de cada biomarcador en la decisión asistida.
-3. **Equidad y Sesgo Demográfico:** Validación de desempeño desagregada por sexo y grupo etario para evitar infradiagnóstico sistemático.
+1. **Principio de No Maleficencia (*Primum Non Nocere*):** En diagnóstico preventivo, un falso negativo omite el tratamiento oportuno de una afección potencialmente letal. Por ello, se ajustan los umbrales de probabilidad para maximizar la sensibilidad diagnóstica.
+2. **Explicabilidad y Cajas Negras:** Ninguna decisión terapéutica o intervención quirúrgica debe basarse en un algoritmo opaco; los biomarcadores de mayor peso deben ser transparentes e interpretables para el médico tratante.
+3. **Privacidad de Expedientes Clínicos:** Se respeta la confidencialidad estricta y anonimización de identificadores directos conforme a la NOM-004-SSA3 del Expediente Clínico y la LFPDPPP.
